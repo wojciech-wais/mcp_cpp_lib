@@ -137,23 +137,40 @@ void HttpServerTransport::setup_routes() {
                         }
                     });
             } else {
-                // Return JSON response(s) synchronously
-                // For simplicity, collect responses
+                // Synchronous JSON response: temporarily capture outbound
+                // messages so we can return them in the HTTP response body.
                 std::vector<nlohmann::json> responses;
-
-                auto handle_one = [&](const JsonRpcMessage& msg) {
-                    if (message_callback_) message_callback_(msg);
-                };
+                {
+                    std::lock_guard<std::mutex> lock(response_capture_mutex_);
+                    response_capture_ = &responses;
+                }
 
                 if (is_batch) {
                     auto msgs = Codec::parse_batch(req.body);
-                    for (auto& m : msgs) handle_one(m);
+                    for (auto& m : msgs) {
+                        if (message_callback_) message_callback_(m);
+                    }
                 } else {
                     auto msg = Codec::parse(req.body);
-                    handle_one(msg);
+                    if (message_callback_) message_callback_(msg);
                 }
 
-                res.set_content("{}", "application/json");
+                {
+                    std::lock_guard<std::mutex> lock(response_capture_mutex_);
+                    response_capture_ = nullptr;
+                }
+
+                if (responses.empty()) {
+                    // Notification - no response expected
+                    res.status = 202;
+                    res.set_content("", "application/json");
+                } else if (responses.size() == 1) {
+                    res.set_content(responses[0].dump(), "application/json");
+                } else {
+                    nlohmann::json batch = nlohmann::json::array();
+                    for (auto& r : responses) batch.push_back(std::move(r));
+                    res.set_content(batch.dump(), "application/json");
+                }
             }
         } catch (const McpParseError& e) {
             res.status = 400;
@@ -251,9 +268,19 @@ void HttpServerTransport::start(MessageCallback on_message, ErrorCallback on_err
 }
 
 void HttpServerTransport::send(const JsonRpcMessage& msg) {
-    // Broadcast to all connected SSE clients
     nlohmann::json j;
     to_json(j, msg);
+
+    // If a synchronous POST handler is capturing responses, deliver there.
+    {
+        std::lock_guard<std::mutex> lock(response_capture_mutex_);
+        if (response_capture_) {
+            response_capture_->push_back(std::move(j));
+            return;
+        }
+    }
+
+    // Otherwise broadcast to all connected SSE clients
     std::string event = "data: " + j.dump() + "\n\n";
 
     std::lock_guard<std::mutex> lock(sessions_mutex_);
@@ -318,9 +345,29 @@ void HttpClientTransport::start(MessageCallback on_message, ErrorCallback on_err
     message_callback_ = std::move(on_message);
     error_callback_ = std::move(on_error);
     connected_ = true;
+
+    // Signal that we're ready (message_callback_ and connected_ are set).
+    {
+        std::lock_guard<std::mutex> lock(ready_mutex_);
+        ready_ = true;
+    }
+    ready_cv_.notify_all();
+
+    // Block until shutdown() is called, keeping the transport thread alive.
+    // HTTP client uses synchronous request-response in send(), but the
+    // transport thread must stay alive so connected_ remains true.
+    std::unique_lock<std::mutex> lock(shutdown_mutex_);
+    shutdown_cv_.wait(lock, [this] { return !running_.load(); });
 }
 
 void HttpClientTransport::send(const JsonRpcMessage& msg) {
+    // Wait for start() to have initialized message_callback_ and connected_.
+    {
+        std::unique_lock<std::mutex> lock(ready_mutex_);
+        if (!ready_) {
+            ready_cv_.wait_for(lock, std::chrono::seconds(5), [this] { return ready_; });
+        }
+    }
     if (!connected_) {
         throw McpTransportError("Not connected");
     }
@@ -328,15 +375,11 @@ void HttpClientTransport::send(const JsonRpcMessage& msg) {
     std::string body = Codec::serialize(msg);
 
     // Extract path from base_url
-    std::string url = base_url_;
-    if (url.substr(0, 7) == "http://") url = url.substr(7);
-    else if (url.substr(0, 8) == "https://") url = url.substr(8);
-    auto slash = url.find('/');
-    std::string path = (slash == std::string::npos) ? "/" : url.substr(slash);
+    std::string path = extract_path();
 
     httplib::Headers headers = {
         {"Content-Type", "application/json"},
-        {"Accept", "application/json, text/event-stream"},
+        {"Accept", "application/json"},
         {"MCP-Protocol-Version", std::string(PROTOCOL_VERSION)}
     };
     if (!session_id_.empty()) {
@@ -368,9 +411,18 @@ void HttpClientTransport::send(const JsonRpcMessage& msg) {
     }
 }
 
+std::string HttpClientTransport::extract_path() const {
+    std::string url = base_url_;
+    if (url.substr(0, 7) == "http://") url = url.substr(7);
+    else if (url.substr(0, 8) == "https://") url = url.substr(8);
+    auto slash = url.find('/');
+    return (slash == std::string::npos) ? "/" : url.substr(slash);
+}
+
 void HttpClientTransport::shutdown() {
     if (!running_.exchange(false)) return;
     connected_ = false;
+    shutdown_cv_.notify_all();
 }
 
 bool HttpClientTransport::is_connected() const {

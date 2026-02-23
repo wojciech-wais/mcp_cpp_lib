@@ -5,6 +5,7 @@
 #include <memory>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
 #include <map>
 #include <set>
 #include <thread>
@@ -69,6 +70,10 @@ private:
 
     // For broadcasting to all connected SSE clients
     std::mutex broadcast_mutex_;
+
+    // Synchronous POST response capture (thread-local per-request)
+    std::mutex response_capture_mutex_;
+    std::vector<nlohmann::json>* response_capture_{nullptr};
 };
 
 /// HTTP client transport for connecting to an MCP server.
@@ -83,6 +88,8 @@ public:
     bool is_connected() const override;
 
 private:
+    std::string extract_path() const;
+
     std::string base_url_;
     std::string session_id_;
     std::atomic<bool> connected_{false};
@@ -91,6 +98,11 @@ private:
     std::thread sse_thread_;
     MessageCallback message_callback_;
     ErrorCallback error_callback_;
+    std::mutex shutdown_mutex_;
+    std::condition_variable shutdown_cv_;
+    std::mutex ready_mutex_;
+    std::condition_variable ready_cv_;
+    bool ready_{false};
 };
 
 } // namespace mcp
