@@ -239,17 +239,19 @@ struct McpServer::Impl {
             std::string name = params.at("name").get<std::string>();
             nlohmann::json arguments = params.value("arguments", nlohmann::json::object());
 
-            ToolHandler* handler = nullptr;
-            AsyncToolHandler* async_handler = nullptr;
+            // Copy handlers under lock to avoid dangling pointers if
+            // remove_tool() is called concurrently.
+            ToolHandler handler;
+            AsyncToolHandler async_handler;
             {
                 std::lock_guard<std::mutex> lock(store_mutex);
                 auto it = tool_handlers.find(name);
                 if (it != tool_handlers.end()) {
-                    handler = &it->second;
+                    handler = it->second;
                 } else {
                     auto ait = async_tool_handlers.find(name);
                     if (ait != async_tool_handlers.end()) {
-                        async_handler = &ait->second;
+                        async_handler = ait->second;
                     }
                 }
             }
@@ -261,9 +263,9 @@ struct McpServer::Impl {
             try {
                 CallToolResult tool_result;
                 if (handler) {
-                    tool_result = (*handler)(arguments);
+                    tool_result = handler(arguments);
                 } else {
-                    auto fut = (*async_handler)(arguments);
+                    auto fut = async_handler(arguments);
                     tool_result = fut.get();
                 }
                 nlohmann::json j;
@@ -296,18 +298,20 @@ struct McpServer::Impl {
         router.on_request("resources/read", [this](const nlohmann::json& params) -> HandlerResult {
             std::string uri = params.at("uri").get<std::string>();
 
-            ResourceReadHandler* handler = nullptr;
+            // Copy handler under lock to avoid dangling pointer if
+            // remove_resource() is called concurrently.
+            ResourceReadHandler handler;
             {
                 std::lock_guard<std::mutex> lock(store_mutex);
                 auto it = resource_handlers.find(uri);
                 if (it != resource_handlers.end()) {
-                    handler = &it->second;
+                    handler = it->second;
                 } else {
                     // Try templates - find a matching template handler
                     for (auto& [tmpl_key, tmpl_handler] : resource_template_handlers) {
                         // Simple prefix match
                         if (uri.find(tmpl_key.substr(0, tmpl_key.find('{'))) == 0) {
-                            handler = &tmpl_handler;
+                            handler = tmpl_handler;
                             break;
                         }
                     }
@@ -319,7 +323,7 @@ struct McpServer::Impl {
             }
 
             try {
-                auto contents = (*handler)(uri);
+                auto contents = handler(uri);
                 nlohmann::json result = {{"contents", contents}};
                 return result;
             } catch (const std::exception& e) {
@@ -378,12 +382,14 @@ struct McpServer::Impl {
             std::string name = params.at("name").get<std::string>();
             nlohmann::json arguments = params.value("arguments", nlohmann::json::object());
 
-            PromptGetHandler* handler = nullptr;
+            // Copy handler under lock to avoid dangling pointer if
+            // remove_prompt() is called concurrently.
+            PromptGetHandler handler;
             {
                 std::lock_guard<std::mutex> lock(store_mutex);
                 auto it = prompt_handlers.find(name);
                 if (it != prompt_handlers.end()) {
-                    handler = &it->second;
+                    handler = it->second;
                 }
             }
 
@@ -392,7 +398,7 @@ struct McpServer::Impl {
             }
 
             try {
-                auto result = (*handler)(name, arguments);
+                auto result = handler(name, arguments);
                 nlohmann::json j;
                 to_json(j, result);
                 return j;
