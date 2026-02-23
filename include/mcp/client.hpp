@@ -33,28 +33,28 @@ public:
     void disconnect();
 
     // ---- Initialization ----
-    InitializeResult initialize();
+    [[nodiscard]] InitializeResult initialize();
 
     // ---- Tools ----
-    PaginatedResult<ToolDefinition> list_tools(std::optional<std::string> cursor = std::nullopt);
-    CallToolResult call_tool(const std::string& name,
+    [[nodiscard]] PaginatedResult<ToolDefinition> list_tools(std::optional<std::string> cursor = std::nullopt);
+    [[nodiscard]] CallToolResult call_tool(const std::string& name,
                               const nlohmann::json& arguments = nlohmann::json::object());
 
     // ---- Resources ----
-    PaginatedResult<ResourceDefinition> list_resources(std::optional<std::string> cursor = std::nullopt);
-    std::vector<ResourceContent> read_resource(const std::string& uri);
-    PaginatedResult<ResourceTemplate> list_resource_templates(
+    [[nodiscard]] PaginatedResult<ResourceDefinition> list_resources(std::optional<std::string> cursor = std::nullopt);
+    [[nodiscard]] std::vector<ResourceContent> read_resource(const std::string& uri);
+    [[nodiscard]] PaginatedResult<ResourceTemplate> list_resource_templates(
         std::optional<std::string> cursor = std::nullopt);
     void subscribe_resource(const std::string& uri);
     void unsubscribe_resource(const std::string& uri);
 
     // ---- Prompts ----
-    PaginatedResult<PromptDefinition> list_prompts(std::optional<std::string> cursor = std::nullopt);
-    GetPromptResult get_prompt(const std::string& name,
+    [[nodiscard]] PaginatedResult<PromptDefinition> list_prompts(std::optional<std::string> cursor = std::nullopt);
+    [[nodiscard]] GetPromptResult get_prompt(const std::string& name,
                                 const nlohmann::json& arguments = nlohmann::json::object());
 
     // ---- Completion ----
-    CompletionResult complete(const CompletionRef& ref, const std::string& arg_name,
+    [[nodiscard]] CompletionResult complete(const CompletionRef& ref, const std::string& arg_name,
                               const std::string& arg_value);
 
     // ---- Logging ----
@@ -80,8 +80,8 @@ public:
     void on_elicitation_request(std::function<ElicitationResult(const ElicitationRequest&)> handler);
 
     // ---- State ----
-    bool is_connected() const;
-    const ServerCapabilities& server_capabilities() const;
+    [[nodiscard]] bool is_connected() const noexcept;
+    [[nodiscard]] const ServerCapabilities& server_capabilities() const;
 
 private:
     struct Impl;

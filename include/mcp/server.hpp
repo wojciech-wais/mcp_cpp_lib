@@ -86,14 +86,14 @@ public:
                        std::optional<std::string> message = std::nullopt);
 
     // ---- Sampling (server->client) ----
-    SamplingResult request_sampling(const SamplingRequest& req);
-    std::future<SamplingResult> request_sampling_async(const SamplingRequest& req);
+    [[nodiscard]] SamplingResult request_sampling(const SamplingRequest& req);
+    [[nodiscard]] std::future<SamplingResult> request_sampling_async(const SamplingRequest& req);
 
     // ---- Elicitation (server->client) ----
-    ElicitationResult request_elicitation(const ElicitationRequest& req);
+    [[nodiscard]] ElicitationResult request_elicitation(const ElicitationRequest& req);
 
     // ---- Roots (server->client) ----
-    std::vector<Root> request_roots();
+    [[nodiscard]] std::vector<Root> request_roots();
 
     // ---- Transport ----
     void serve_stdio();
@@ -101,7 +101,7 @@ public:
     void serve(std::unique_ptr<ITransport> transport);
     void shutdown();
 
-    bool is_running() const;
+    [[nodiscard]] bool is_running() const noexcept;
 
 private:
     struct Impl;

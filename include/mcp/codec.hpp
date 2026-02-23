@@ -10,16 +10,16 @@ class Codec {
 public:
     /// Parse raw JSON bytes into a message.
     /// Throws McpParseError on invalid JSON or missing required fields.
-    static JsonRpcMessage parse(std::string_view raw);
+    [[nodiscard]] static JsonRpcMessage parse(std::string_view raw);
 
     /// Parse a batch of messages (JSON array).
-    static std::vector<JsonRpcMessage> parse_batch(std::string_view raw);
+    [[nodiscard]] static std::vector<JsonRpcMessage> parse_batch(std::string_view raw);
 
     /// Serialize a message to JSON string.
-    static std::string serialize(const JsonRpcMessage& msg);
+    [[nodiscard]] static std::string serialize(const JsonRpcMessage& msg);
 
     /// Serialize a batch.
-    static std::string serialize_batch(const std::vector<JsonRpcMessage>& msgs);
+    [[nodiscard]] static std::string serialize_batch(const std::vector<JsonRpcMessage>& msgs);
 
 private:
     static JsonRpcMessage parse_object(const nlohmann::json& j);

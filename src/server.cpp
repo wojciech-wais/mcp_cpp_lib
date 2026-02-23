@@ -802,7 +802,7 @@ void McpServer::shutdown() {
     }
 }
 
-bool McpServer::is_running() const {
+bool McpServer::is_running() const noexcept {
     return impl_->running;
 }
 

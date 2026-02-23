@@ -28,11 +28,11 @@ class Session {
 public:
     Session();
 
-    SessionState state() const;
+    [[nodiscard]] SessionState state() const;
     void set_state(SessionState s);
 
     /// Generate a new request ID.
-    RequestId next_id();
+    [[nodiscard]] RequestId next_id();
 
     /// Register a pending outgoing request.
     RequestId register_request(const std::string& method,
@@ -47,7 +47,7 @@ public:
 
     /// Timeout management.
     void set_request_timeout(std::chrono::milliseconds timeout);
-    std::vector<RequestId> check_timeouts();
+    [[nodiscard]] std::vector<RequestId> check_timeouts();
 
     /// Negotiated capabilities.
     ServerCapabilities& server_capabilities();
@@ -61,7 +61,7 @@ public:
     std::optional<std::string>& session_id();
     const std::optional<std::string>& session_id() const;
 
-    bool has_pending_request(const RequestId& id) const;
+    [[nodiscard]] bool has_pending_request(const RequestId& id) const;
 
 private:
     mutable std::mutex mutex_;

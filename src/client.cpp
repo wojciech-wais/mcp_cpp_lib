@@ -509,7 +509,7 @@ void McpClient::on_elicitation_request(
     impl_->elicitation_handler = std::move(handler);
 }
 
-bool McpClient::is_connected() const {
+bool McpClient::is_connected() const noexcept {
     return impl_->connected;
 }
 

@@ -25,7 +25,7 @@ public:
     void on_notification(const std::string& method, NotificationHandler handler);
 
     /// Dispatch an incoming message. Returns response if applicable.
-    std::optional<JsonRpcMessage> dispatch(const JsonRpcMessage& msg,
+    [[nodiscard]] std::optional<JsonRpcMessage> dispatch(const JsonRpcMessage& msg,
                                             const Session* session = nullptr);
 
     /// Set required capability for a method (enforced during dispatch).
@@ -35,7 +35,7 @@ public:
     void set_capabilities(const ServerCapabilities& server_caps,
                           const ClientCapabilities& client_caps);
 
-    bool has_handler(const std::string& method) const;
+    [[nodiscard]] bool has_handler(const std::string& method) const;
 
 private:
     bool check_capability(const std::string& method) const;

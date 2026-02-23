@@ -24,7 +24,7 @@ public:
     virtual void shutdown() = 0;
 
     /// Check if transport is connected.
-    virtual bool is_connected() const = 0;
+    [[nodiscard]] virtual bool is_connected() const = 0;
 };
 
 } // namespace mcp
