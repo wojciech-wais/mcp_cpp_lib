@@ -2,6 +2,7 @@
 #include "types.hpp"
 #include "json_rpc.hpp"
 #include "transport/transport.hpp"
+#include <atomic>
 #include <functional>
 #include <future>
 #include <memory>
@@ -12,8 +13,26 @@
 
 namespace mcp {
 
+/// Token that tool handlers can check to detect cancellation.
+/// Passed by shared_ptr so the server can signal cancellation after dispatch.
+class CancellationToken {
+public:
+    CancellationToken() : cancelled_(std::make_shared<std::atomic<bool>>(false)) {}
+
+    /// Check whether cancellation has been requested.
+    [[nodiscard]] bool is_cancelled() const noexcept { return cancelled_->load(); }
+
+    /// Request cancellation (called internally by the server).
+    void cancel() noexcept { cancelled_->store(true); }
+
+private:
+    std::shared_ptr<std::atomic<bool>> cancelled_;
+};
+
 /// Callback types
 using ToolHandler = std::function<CallToolResult(const nlohmann::json& arguments)>;
+using CancellableToolHandler = std::function<CallToolResult(const nlohmann::json& arguments,
+                                                             CancellationToken token)>;
 using ResourceReadHandler = std::function<std::vector<ResourceContent>(const std::string& uri)>;
 using PromptGetHandler = std::function<GetPromptResult(const std::string& name,
                                                         const nlohmann::json& arguments)>;
@@ -41,6 +60,7 @@ public:
 
     // ---- Tool registration ----
     void add_tool(ToolDefinition def, ToolHandler handler);
+    void add_tool(ToolDefinition def, CancellableToolHandler handler);
     void add_tool_async(ToolDefinition def, AsyncToolHandler handler);
     void remove_tool(const std::string& name);
 

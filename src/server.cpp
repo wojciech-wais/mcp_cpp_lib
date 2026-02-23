@@ -59,7 +59,12 @@ struct McpServer::Impl {
     std::mutex store_mutex;
     PagedStore<ToolDefinition> tools;
     std::unordered_map<std::string, ToolHandler> tool_handlers;
+    std::unordered_map<std::string, CancellableToolHandler> cancellable_tool_handlers;
     std::unordered_map<std::string, AsyncToolHandler> async_tool_handlers;
+
+    // Active tool calls tracked for cancellation (request_id_string -> token)
+    std::mutex active_mutex;
+    std::unordered_map<std::string, CancellationToken> active_requests;
 
     PagedStore<ResourceDefinition> resources;
     std::unordered_map<std::string, ResourceReadHandler> resource_handlers;
@@ -239,9 +244,18 @@ struct McpServer::Impl {
             std::string name = params.at("name").get<std::string>();
             nlohmann::json arguments = params.value("arguments", nlohmann::json::object());
 
+            // Extract _meta.progressToken to use as request tracking key
+            std::string request_key;
+            if (params.contains("_meta") && params["_meta"].contains("progressToken")) {
+                auto& pt = params["_meta"]["progressToken"];
+                if (pt.is_number_integer()) request_key = std::to_string(pt.get<int64_t>());
+                else if (pt.is_string()) request_key = pt.get<std::string>();
+            }
+
             // Copy handlers under lock to avoid dangling pointers if
             // remove_tool() is called concurrently.
             ToolHandler handler;
+            CancellableToolHandler cancellable_handler;
             AsyncToolHandler async_handler;
             {
                 std::lock_guard<std::mutex> lock(store_mutex);
@@ -249,20 +263,44 @@ struct McpServer::Impl {
                 if (it != tool_handlers.end()) {
                     handler = it->second;
                 } else {
-                    auto ait = async_tool_handlers.find(name);
-                    if (ait != async_tool_handlers.end()) {
-                        async_handler = ait->second;
+                    auto cit = cancellable_tool_handlers.find(name);
+                    if (cit != cancellable_tool_handlers.end()) {
+                        cancellable_handler = cit->second;
+                    } else {
+                        auto ait = async_tool_handlers.find(name);
+                        if (ait != async_tool_handlers.end()) {
+                            async_handler = ait->second;
+                        }
                     }
                 }
             }
 
-            if (!handler && !async_handler) {
+            if (!handler && !cancellable_handler && !async_handler) {
                 return JsonRpcError{error::InvalidParams, "Unknown tool: " + name, std::nullopt};
             }
 
             try {
                 CallToolResult tool_result;
-                if (handler) {
+                if (cancellable_handler) {
+                    CancellationToken token;
+                    if (!request_key.empty()) {
+                        std::lock_guard<std::mutex> lock(active_mutex);
+                        active_requests[request_key] = token;
+                    }
+                    try {
+                        tool_result = cancellable_handler(arguments, token);
+                    } catch (...) {
+                        if (!request_key.empty()) {
+                            std::lock_guard<std::mutex> lock(active_mutex);
+                            active_requests.erase(request_key);
+                        }
+                        throw;
+                    }
+                    if (!request_key.empty()) {
+                        std::lock_guard<std::mutex> lock(active_mutex);
+                        active_requests.erase(request_key);
+                    }
+                } else if (handler) {
                     tool_result = handler(arguments);
                 } else {
                     auto fut = async_handler(arguments);
@@ -436,9 +474,21 @@ struct McpServer::Impl {
         });
 
         // notifications/cancelled
-        router.on_notification("notifications/cancelled", [](const nlohmann::json& params) {
-            // TODO: cancel the in-progress request
-            (void)params;
+        router.on_notification("notifications/cancelled", [this](const nlohmann::json& params) {
+            // Extract the request ID and signal cancellation to the active handler
+            std::string key;
+            if (params.contains("requestId")) {
+                auto& rid = params["requestId"];
+                if (rid.is_number_integer()) key = std::to_string(rid.get<int64_t>());
+                else if (rid.is_string()) key = rid.get<std::string>();
+            }
+            if (!key.empty()) {
+                std::lock_guard<std::mutex> lock(active_mutex);
+                auto it = active_requests.find(key);
+                if (it != active_requests.end()) {
+                    it->second.cancel();
+                }
+            }
         });
 
         // Handle incoming responses (server<-client responses to server->client requests)
@@ -534,6 +584,19 @@ void McpServer::add_tool(ToolDefinition def, ToolHandler handler) {
     }
 }
 
+void McpServer::add_tool(ToolDefinition def, CancellableToolHandler handler) {
+    std::lock_guard<std::mutex> lock(impl_->store_mutex);
+    auto& items = impl_->tools.items;
+    items.erase(std::remove_if(items.begin(), items.end(),
+        [&def](const ToolDefinition& t) { return t.name == def.name; }), items.end());
+    impl_->cancellable_tool_handlers[def.name] = std::move(handler);
+    items.push_back(std::move(def));
+
+    if (impl_->running) {
+        impl_->send_notification("notifications/tools/list_changed");
+    }
+}
+
 void McpServer::add_tool_async(ToolDefinition def, AsyncToolHandler handler) {
     std::lock_guard<std::mutex> lock(impl_->store_mutex);
     auto& items = impl_->tools.items;
@@ -553,6 +616,7 @@ void McpServer::remove_tool(const std::string& name) {
     items.erase(std::remove_if(items.begin(), items.end(),
         [&name](const ToolDefinition& t) { return t.name == name; }), items.end());
     impl_->tool_handlers.erase(name);
+    impl_->cancellable_tool_handlers.erase(name);
     impl_->async_tool_handlers.erase(name);
 
     if (impl_->running) {
