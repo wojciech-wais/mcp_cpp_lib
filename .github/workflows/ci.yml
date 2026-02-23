@@ -11,11 +11,11 @@ on:
 jobs:
   build-and-test:
     name: Build & Test (${{ matrix.compiler }}, ${{ matrix.build_type }})
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        compiler: [gcc-13, clang-17]
+        compiler: [gcc-13, clang-18]
         build_type: [Debug, Release]
     steps:
       - uses: actions/checkout@v4
@@ -29,9 +29,9 @@ jobs:
             echo "CC=gcc-13" >> $GITHUB_ENV
             echo "CXX=g++-13" >> $GITHUB_ENV
           else
-            sudo apt-get install -y clang-17
-            echo "CC=clang-17" >> $GITHUB_ENV
-            echo "CXX=clang++-17" >> $GITHUB_ENV
+            sudo apt-get install -y clang-18
+            echo "CC=clang-18" >> $GITHUB_ENV
+            echo "CXX=clang++-18" >> $GITHUB_ENV
           fi
 
       - name: Configure
@@ -49,19 +49,19 @@ jobs:
 
   sanitizers:
     name: Sanitizers
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build clang-17
+          sudo apt-get install -y cmake ninja-build clang-18
       - name: Configure
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_CXX_COMPILER=clang++-17 \
-            -DCMAKE_C_COMPILER=clang-17 \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_C_COMPILER=clang-18 \
             -DMCPXX_BUILD_TESTS=ON \
             -DMCPXX_SANITIZERS=ON
       - name: Build
@@ -71,7 +71,7 @@ jobs:
 
   coverage:
     name: Coverage
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install
@@ -104,7 +104,7 @@ jobs:
 
   benchmarks:
     name: Benchmarks
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
