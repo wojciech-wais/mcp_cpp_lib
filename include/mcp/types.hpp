@@ -363,6 +363,15 @@ struct LogMessage {
     }
 };
 
+// ---------- Progress ----------
+
+struct ProgressInfo {
+    std::variant<int64_t, std::string> token;
+    double progress;
+    std::optional<double> total;
+    std::optional<std::string> message;
+};
+
 // ---------- Pagination ----------
 
 struct PaginatedRequest {

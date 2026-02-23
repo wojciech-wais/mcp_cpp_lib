@@ -44,6 +44,7 @@ struct McpClient::Impl {
     std::function<void(const std::string&)> on_resource_updated_cb;
     std::function<void()> on_prompts_changed_cb;
     std::function<void(const LogMessage&)> on_log_message_cb;
+    std::function<void(const ProgressInfo&)> on_progress_cb;
 
     // Server->client request handlers
     std::function<SamplingResult(const SamplingRequest&)> sampling_handler;
@@ -87,8 +88,26 @@ struct McpClient::Impl {
                 } catch (...) {}
             }
         });
-        router.on_notification("notifications/progress", [](const nlohmann::json&) {
-            // Progress notifications - user can extend
+        router.on_notification("notifications/progress", [this](const nlohmann::json& params) {
+            std::lock_guard<std::mutex> lock(callback_mutex);
+            if (on_progress_cb) {
+                try {
+                    ProgressInfo info;
+                    if (params.contains("progressToken")) {
+                        auto& pt = params["progressToken"];
+                        if (pt.is_number_integer()) info.token = pt.get<int64_t>();
+                        else if (pt.is_string()) info.token = pt.get<std::string>();
+                    }
+                    info.progress = params.at("progress").get<double>();
+                    if (params.contains("total") && !params["total"].is_null()) {
+                        info.total = params["total"].get<double>();
+                    }
+                    if (params.contains("message") && !params["message"].is_null()) {
+                        info.message = params["message"].get<std::string>();
+                    }
+                    on_progress_cb(info);
+                } catch (...) {}
+            }
         });
         router.on_notification("notifications/cancelled", [](const nlohmann::json&) {
             // Handle cancelled notification
@@ -451,6 +470,11 @@ void McpClient::on_resource_updated(std::function<void(const std::string& uri)> 
 void McpClient::on_prompts_changed(std::function<void()> callback) {
     std::lock_guard<std::mutex> lock(impl_->callback_mutex);
     impl_->on_prompts_changed_cb = std::move(callback);
+}
+
+void McpClient::on_progress(std::function<void(const ProgressInfo&)> callback) {
+    std::lock_guard<std::mutex> lock(impl_->callback_mutex);
+    impl_->on_progress_cb = std::move(callback);
 }
 
 void McpClient::cancel_request(const RequestId& id, const std::string& reason) {

@@ -66,6 +66,7 @@ public:
     void on_resources_changed(std::function<void()> callback);
     void on_resource_updated(std::function<void(const std::string& uri)> callback);
     void on_prompts_changed(std::function<void()> callback);
+    void on_progress(std::function<void(const ProgressInfo&)> callback);
 
     // ---- Cancellation ----
     void cancel_request(const RequestId& id, const std::string& reason = "");
