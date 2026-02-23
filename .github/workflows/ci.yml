@@ -85,7 +85,8 @@ jobs:
             -DCMAKE_CXX_COMPILER=g++-13 \
             -DCMAKE_C_COMPILER=gcc-13 \
             -DMCPXX_BUILD_TESTS=ON \
-            -DMCPXX_COVERAGE=ON
+            -DMCPXX_COVERAGE=ON \
+            -DCMAKE_CXX_FLAGS="-fprofile-update=atomic"
       - name: Build
         run: cmake --build build -j$(nproc)
       - name: Test
@@ -93,7 +94,7 @@ jobs:
       - name: Generate coverage report
         run: |
           lcov --capture --directory build --output-file coverage.info \
-               --ignore-errors mismatch
+               --ignore-errors mismatch,negative
           lcov --remove coverage.info '*/tests/*' '*/benchmarks/*' \
                '*/_deps/*' '/usr/*' --output-file coverage.info
           genhtml coverage.info --output-directory coverage_html
